@@ -5,7 +5,7 @@
 import ctypes
 import binascii
 import time
-from tmex import *
+from .tmex import *
 
 DEVICEINFO = {
     0x01: ("DS1990A", "Serial Number iButton"),
@@ -18,7 +18,7 @@ DEVICEINFO = {
 class TMEXException(Exception):
     pass
 
-class TMEXSession(object):
+class Session(object):
     
     def __init__(self, port=0):
         self._handle = 0
@@ -62,7 +62,7 @@ class TMEXSession(object):
             result = TMRom(self._handle, self._context, rom)
             if result == 1:
                 deviceId = ''.join(['%02X' % (x) for x in rom])
-                romBytes = [ord(x) for x in binascii.unhexlify(deviceId)]
+                romBytes = [x for x in rom]
                 rb = (ctypes.c_ubyte * 8)(*romBytes)
                 result = TMCRC(8, rb, 0, 0)
                 if result == 0:
@@ -154,25 +154,3 @@ class TMEXSession(object):
             humidity = ((voltage / 5.0) - 0.16) / 0.0062
             humidity = humidity / (1.0546 - (0.00216 * temp))
         return {'temperature': temp, 'humidity': humidity}
-
-def main():
-    session = TMEXSession()
-    devices = session.enumrate()
-    
-    for key, device in devices.iteritems():
-        print('%s: %s %s' % (key, device['name'], device['description']))
-    
-    while True:
-        try:
-            for key, device in devices.iteritems():
-                readout = session.readDevice(key)
-                if len(readout) > 0:
-                    messages = ['%s:' % (key)]
-                    for key, value in readout.iteritems():
-                        messages.append('%s: %.2f' % (key, value))
-                    print(' '.join(messages))
-        except KeyboardInterrupt:
-            break;
-
-if __name__ == "__main__":
-    main();
