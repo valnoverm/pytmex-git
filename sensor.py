@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-# 2011-08, Erik Svensson <erik.public@gmail.com>
+# Copyright (c) 2011 Erik Svensson <erik.public@gmail.com>
+# Licensed under the MIT license.
 
 import ctypes
 import binascii
