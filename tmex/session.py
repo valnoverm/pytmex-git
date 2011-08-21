@@ -15,9 +15,6 @@ DEVICEINFO = {
     0x81: ("DS1420", "Serial ID Button")
 }
 
-class TMEXException(Exception):
-    pass
-
 class Session(object):
     
     def __init__(self, port=0):
@@ -40,8 +37,8 @@ class Session(object):
         result = TMSetup(self._handle)
         if (result != 1):
             TMEndSession(self._handle)
-            if result in SetupMessages:
-                raise TMEXException(SetupMessages[result])
+            if result in TMSetupMessages:
+                raise TMEXException(TMSetupMessages[result])
             else:
                 raise TMEXException('Unknown setup error, %d' % (result))
     
@@ -128,6 +125,7 @@ class Session(object):
             data = TMTouchByte(self._handle, 0x44)
             data = TMTouchByte(self._handle, 0xFF)
             while data == 0:
+                
                 data = TMTouchByte(self._handle, 0xFF)
             result = self._addressDevice(deviceId)
             data = TMTouchByte(self._handle, 0xB4)
