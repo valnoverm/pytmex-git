@@ -3,11 +3,13 @@
 # Licensed under the MIT license.
 
 import ctypes
+from array import array
 
 try:
-    dll = ctypes.windll.LoadLibrary("IBFS64.DLL")
-except Exception:
-    dll = ctypes.windll.LoadLibrary("IBFS32.DLL")
+    library = "IBFS32.DLL" if array('L').itemsize == 4 else "IBFS64.DLL"
+    dll = ctypes.windll.LoadLibrary(library)
+except:
+    raise Exception("Library '{}' not found".format(library))
 
 PortTypes = {
     1: "Older DS9097E-type serial port adapter",
