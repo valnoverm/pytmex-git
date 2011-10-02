@@ -47,7 +47,7 @@ class Session(object):
             return False
         return TMValidSession(self._handle) == 1
     
-    def enumrate(self, familys=[40]):
+    def enumrate(self, familyFilter=None):
         if self._handle == 0:
             raise TMEXException('Bus not initialized')
         if not self.valid():
@@ -60,7 +60,10 @@ class Session(object):
             if result == 1:
                 deviceId = ''.join(['%02X' % (x) for x in rom])
                 romBytes = [x for x in rom]
-                if romBytes[0] in familys:
+                doRead = True
+                if familyFilter:
+                    doRead = romBytes[0] in familyFilter
+                if doRead:
                     rb = (ctypes.c_ubyte * 8)(*romBytes)
                     result = TMCRC(8, rb, 0, 0)
                     if result == 0:
