@@ -3,9 +3,14 @@
 # Licensed under the MIT license.
 
 import ctypes
-import binascii
 import time
 from .tmex import *
+from sys import hexversion
+from datetime import datetime
+
+PYTHON3 = hex(hexversion)[2:4] == '30'
+if not PYTHON3:
+    import binascii
 
 DEVICEINFO = {
     0x01: ("DS1990A", "Serial Number iButton"),
@@ -16,24 +21,27 @@ DEVICEINFO = {
 }
 
 class Session(object):
-    
+
     def __init__(self, port=0):
         self._handle = 0
-        self._context = ctypes.create_string_buffer('\000' * 15360)
+        if PYTHON3:
+            self._context = ctypes.create_string_buffer(b'\000' * 15360)
+        else:
+            self._context = ctypes.create_string_buffer('\000' * 15360)
         self._devices = {}
         self.initialize(port)
-    
+
     def __del__(self):
         if self._handle != 0:
             TMEndSession(self._handle)
-    
+
     def initialize(self, port=0):
         portNumber = ctypes.c_short(port)
         portType = ctypes.c_short(0)
         TMReadDefaultPort(portNumber, portType)
-    
+
         self._handle = TMExtendedStartSession(portNumber, portType, None)
-    
+
         result = TMSetup(self._handle)
         if (result != 1):
             TMEndSession(self._handle)
@@ -41,12 +49,12 @@ class Session(object):
                 raise TMEXException(TMSetupMessages[result])
             else:
                 raise TMEXException('Unknown setup error, %d' % (result))
-    
+
     def valid(self):
         if self._handle == 0:
             return False
         return TMValidSession(self._handle) == 1
-    
+
     def enumrate(self, familyFilter=None):
         if self._handle == 0:
             raise TMEXException('Bus not initialized')
@@ -77,8 +85,8 @@ class Session(object):
             result = TMNext(self._handle, self._context)
         self._devices = devices
         return devices
-    
-    def readDevice(self, deviceId):
+
+    def readDevice(self, deviceId, disableTemp=False):
         if deviceId not in self._devices:
             raise ValueError()
         deviceName = self._devices[deviceId]['name']
@@ -88,35 +96,82 @@ class Session(object):
         except Exception:
             func = None
         if func:
-            return func(deviceId)
+            return func(deviceId, disableTemp)
         else:
             return {}
-    
+
+    def readTemperatureFromAllSensors(self, deviceId='DS18B2', roms=[], timeStamp=True):
+        if deviceId not in ('DS18B2',):
+            raise TMEXException("Sorry, device {} not supported".format(deviceId))
+
+        if len(roms) < 1:
+            return {}
+
+        if timeStamp:
+            startTime = datetime.now()
+
+        TMTouchReset(self._handle)
+        TMOneWireLevel(self._handle, 0, 1, 2)
+
+        TMTouchByte(self._handle, 0xCC)
+        TMTouchByte(self._handle, 0x44)
+
+        time.sleep(.750)
+        data = TMTouchByte(self._handle, 0xFF)
+
+        while data == 0:
+            data = TMTouchByte(self._handle, 0xFF)
+
+        TMOneWireLevel(self._handle, 0, 0, 0)
+        temperatures = {}
+
+        for rom in roms:
+            if not rom[:2] == '28':
+                continue
+
+            t = self.readDevice(rom, disableTemp=True)
+            t = t['temperature'] if 'temperature' in t else None
+            temperatures[rom] = { 'temperature' : t }
+
+            if timeStamp:
+                temperatures[rom]['timestamp'] = datetime.now()
+
+        if timeStamp:
+            stopTime = datetime.now()
+            temperatures['time'] = (startTime, stopTime)
+            temperatures['delta'] = stopTime - startTime
+        return temperatures
+
     def _addressDevice(self, deviceId):
         if deviceId not in self._devices:
             raise ValueError()
         TMTouchReset(self._handle)
         TMTouchByte(self._handle, 0x55) # MATCH ROM
-        address = [ord(x) for x in binascii.unhexlify(deviceId)]
-        for i in xrange(8):
+        if PYTHON3:
+            # FIXME: Bad code
+            address = [ord(chr(x)) for x in bytes.fromhex(deviceId) ]
+        else:
+            address = [ord(x) for x in binascii.unhexlify(deviceId)]
+        for i in range(8):
             TMTouchByte(self._handle, address[i]) # Send Id
         return 1
-    
-    def _read_DS18B2(self, deviceId):
+
+    def _read_DS18B2(self, deviceId, disableTemp=False):
         result = self._addressDevice(deviceId)
         temp = None
         if result == 1:
-            TMOneWireLevel(self._handle, 0, 1, 2)
-            data = TMTouchByte(self._handle, 0x44)
-            time.sleep(0.6)
-            data = TMTouchByte(self._handle, 0xFF)
-            
-            while data == 0:
+            if not disableTemp:
+                TMOneWireLevel(self._handle, 0, 1, 2)
+                data = TMTouchByte(self._handle, 0x44)
+                time.sleep(0.6)
                 data = TMTouchByte(self._handle, 0xFF)
-            TMOneWireLevel(self._handle, 0, 0, 0)
+
+                while data == 0:
+                    data = TMTouchByte(self._handle, 0xFF)
+                TMOneWireLevel(self._handle, 0, 0, 0)
             result = self._addressDevice(deviceId)
             data = TMTouchByte(self._handle, 0xBE)
-            data = [TMTouchByte(self._handle, 0xFF) for i in xrange(9)]
+            data = [TMTouchByte(self._handle, 0xFF) for i in range(9)]
             temp = ((0x07 & data[1]) << 4) + ((0xF0 & data[0]) >> 4) + (((0x08 & data[0]) >> 3) * 0.5) + (((0x04 & data[0]) >> 2) * 0.25) + (((0x02 & data[0]) >> 1) * 0.125) + (((0x01 & data[0])) * 0.0625)
             if (0x08 & data[1]) == 0x08:
                 temp = -temp
@@ -129,7 +184,7 @@ class Session(object):
             data = TMTouchByte(self._handle, 0x44)
             data = TMTouchByte(self._handle, 0xFF)
             while data == 0:
-                
+
                 data = TMTouchByte(self._handle, 0xFF)
             result = self._addressDevice(deviceId)
             data = TMTouchByte(self._handle, 0xB4)
@@ -142,7 +197,7 @@ class Session(object):
             result = self._addressDevice(deviceId)
             data = TMTouchByte(self._handle, 0xBE)
             data = TMTouchByte(self._handle, 0x00)
-            data = [TMTouchByte(self._handle, 0xFF) for i in xrange(9)]
+            data = [TMTouchByte(self._handle, 0xFF) for i in range(9)]
             temp = (0x7F & data[2])
             temp += ((0x80 & data[1]) >> 7) * 0.5
             temp += ((0x40 & data[1]) >> 6) * 0.25
