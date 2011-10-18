@@ -8,20 +8,20 @@ def main():
     session = tmex.Session()
     devices = session.enumrate()
      
-    for key, device in devices.iteritems():
+    for key, device in tmex.iteritems(devices):
         print('%s: %s %s' % (key, device['name'], device['description']))
     
     while True:
         try:
-            for key, device in devices.iteritems():
+            for key, device in tmex.iteritems(devices):
                 readout = session.readDevice(key)
                 if len(readout) > 0:
                     messages = ['%s:' % (key)]
-                    for key, value in readout.iteritems():
+                    for key, value in tmex.iteritems(readout):
                         messages.append('%s: %.2f' % (key, value))
                     print(' '.join(messages))
         except KeyboardInterrupt:
-            break;
+            break
 
 if __name__ == "__main__":
     main();

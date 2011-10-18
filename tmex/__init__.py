@@ -2,6 +2,8 @@
 # Copyright (c) 2011 Erik Svensson <erik.public@gmail.com>
 # Licensed under the MIT license.
 
+from .system import iteritems
+
 from .tmex import PortTypes, TMSetupMessages
 from .tmex import TMFamilySpec
 from .tmex import TMReadDefaultPort, TMExtendedStartSession, TMValidSession, TMEndSession

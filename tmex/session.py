@@ -5,11 +5,10 @@
 import ctypes
 import time
 from .tmex import *
-from sys import hexversion
+from .system import ISPYTHON3
 from datetime import datetime
 
-PYTHON3 = hex(hexversion)[2:4] == '30'
-if not PYTHON3:
+if not ISPYTHON3:
     import binascii
 
 DEVICEINFO = {
@@ -24,7 +23,7 @@ class Session(object):
 
     def __init__(self, port=0):
         self._handle = 0
-        if PYTHON3:
+        if ISPYTHON3:
             self._context = ctypes.create_string_buffer(b'\000' * 15360)
         else:
             self._context = ctypes.create_string_buffer('\000' * 15360)
@@ -66,7 +65,7 @@ class Session(object):
             rom = (ctypes.c_short * 8)()
             result = TMRom(self._handle, self._context, rom)
             if result == 1:
-                deviceId = ''.join(['%02X' % (x) for x in rom])
+                deviceId = ''.join(['%02X' % x for x in rom])
                 romBytes = [x for x in rom]
                 doRead = True
                 if familyFilter:
@@ -75,7 +74,7 @@ class Session(object):
                     rb = (ctypes.c_ubyte * 8)(*romBytes)
                     result = TMCRC(8, rb, 0, 0)
                     if result == 0:
-                        kind = rom[0]
+                        kind = int(rom[0])
                         info = None
                         if kind in DEVICEINFO:
                             info = DEVICEINFO[kind]
@@ -86,17 +85,17 @@ class Session(object):
         self._devices = devices
         return devices
 
-    def readDevice(self, deviceId, disableTemp=False):
+    def readDevice(self, deviceId, enableWireLeveling=False):
         if deviceId not in self._devices:
             raise ValueError()
         deviceName = self._devices[deviceId]['name']
         func = None
         try:
             func = getattr(self, '_read_' + deviceName)
-        except Exception:
+        except AttributeError:
             func = None
         if func:
-            return func(deviceId, disableTemp)
+            return func(deviceId, enableWireLeveling)
         else:
             return {}
 
@@ -129,7 +128,7 @@ class Session(object):
             if not rom[:2] == '28':
                 continue
 
-            t = self.readDevice(rom, disableTemp=True)
+            t = self.readDevice(rom)
             t = t['temperature'] if 'temperature' in t else None
             temperatures[rom] = { 'temperature' : t }
 
@@ -147,7 +146,7 @@ class Session(object):
             raise ValueError()
         TMTouchReset(self._handle)
         TMTouchByte(self._handle, 0x55) # MATCH ROM
-        if PYTHON3:
+        if ISPYTHON3:
             # FIXME: Bad code
             address = [ord(chr(x)) for x in bytes.fromhex(deviceId) ]
         else:
@@ -156,16 +155,15 @@ class Session(object):
             TMTouchByte(self._handle, address[i]) # Send Id
         return 1
 
-    def _read_DS18B2(self, deviceId, disableTemp=False):
+    def _read_DS18B2(self, deviceId, enableWireLeveling=False):
         result = self._addressDevice(deviceId)
         temp = None
         if result == 1:
-            if not disableTemp:
+            if enableWireLeveling:
                 TMOneWireLevel(self._handle, 0, 1, 2)
                 data = TMTouchByte(self._handle, 0x44)
                 time.sleep(0.6)
                 data = TMTouchByte(self._handle, 0xFF)
-
                 while data == 0:
                     data = TMTouchByte(self._handle, 0xFF)
                 TMOneWireLevel(self._handle, 0, 0, 0)
@@ -177,7 +175,7 @@ class Session(object):
                 temp = -temp
         return {'temperature': temp}
 
-    def _read_DS2438(self, deviceId):
+    def _read_DS2438(self, deviceId, enableWireLeveling=False):
         result = self._addressDevice(deviceId)
         temp = None
         if result == 1:

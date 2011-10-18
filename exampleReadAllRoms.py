@@ -10,12 +10,7 @@ def main():
     session = tmex.Session()
     devices = session.enumrate()
 
-    if hex(sys.hexversion)[2:4] == '30':
-        devices_iter = devices.items()
-    else:
-        devices_iter = devices.iteritems()        
-
-    for key, device in devices_iter:
+    for key, device in tmex.iteritems(devices):
         print('%s: %s %s' % (key, device['name'], device['description']))
 
     while True:

@@ -2,11 +2,10 @@
 # Copyright (c) 2011 Erik Svensson <erik.public@gmail.com>
 # Licensed under the MIT license.
 
-import ctypes, platform
+import ctypes
+from .system import ARCHITECTURE_BITS
 
-# arch_bits should be either '32bit' or '64bit', arch_linker should be 'WindowsPE' on Windows.
-(arch_bits, arch_linker) = platform.architecture() 
-library = "IBFS64.DLL" if arch_bits == '64bit' else "IBFS32.DLL"
+library = "IBFS64.DLL" if ARCHITECTURE_BITS == 64 else "IBFS32.DLL"
 
 try:
     dll = ctypes.windll.LoadLibrary(library)

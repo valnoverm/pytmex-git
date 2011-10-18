@@ -30,7 +30,7 @@ def oneWireWorker(channel, port=0):
                         channel.send(e)
                 elif obj.command == 'read':
                     try:
-                        readout = session.readDevice(obj.deviceId)
+                        readout = session.readDevice(obj.deviceId, enableWireLeveling=True)
                         channel.send(Result('read', obj.deviceId, readout))
                     except ValueError:
                         channel.send(TMEXException('Invalid id'))
