@@ -8,7 +8,7 @@ import time
 
 def main():
     session = tmex.Session()
-    devices = session.enumrate()
+    devices = session.enumrate(familyFilter=[0x28])
 
     for key, device in tmex.iteritems(devices):
         print('%s: %s %s' % (key, device['name'], device['description']))
@@ -16,20 +16,18 @@ def main():
     while True:
         try:
             devices = list(devices)
-            data = session.readTemperatureFromAllSensors(
-                            roms=devices, timeStamp=True)
+            data = session.readDevices(devices=devices, familyFilter=['DS18B2'], timeStamp=True)
+            deviceCount = 0
             for rom in data:
-                if not rom[:2] == '28':
-                    continue
-
-                datarom = data[rom]
-                temp = datarom['temperature']
-                print("{} = {:<8} C".format(rom, temp))
-
+                if rom in devices:
+                    datarom = data[rom]
+                    if 'temperature' in datarom:
+                        temp = datarom['temperature']
+                        print("{} = {:<8} C".format(rom, temp))
+                    deviceCount += 1
             if 'delta' in data:
                 delta = data['delta'].total_seconds()
-                print("{} sensors were surveyed for {} seconds\n".format(len(devices), delta))
-
+                print("{} sensors were surveyed for {} seconds\n".format(deviceCount, delta))
             print("Sleeping 2 seconds ...")
             time.sleep(2)
         except KeyboardInterrupt:

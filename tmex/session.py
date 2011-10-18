@@ -5,7 +5,7 @@
 import ctypes
 import time
 from .tmex import *
-from .system import ISPYTHON3
+from .system import ISPYTHON3, iteritems
 from datetime import datetime
 
 if not ISPYTHON3:
@@ -20,8 +20,17 @@ DEVICEINFO = {
 }
 
 class Session(object):
+    """
+    Session is a class that encapsulates a 1-Wire session.
+    """
 
     def __init__(self, port=0):
+        """
+        Initializes a 1-Wire session.
+        
+        port:
+            A optional port number that will be used to start the session.
+        """
         self._handle = 0
         if ISPYTHON3:
             self._context = ctypes.create_string_buffer(b'\000' * 15360)
@@ -35,6 +44,12 @@ class Session(object):
             TMEndSession(self._handle)
 
     def initialize(self, port=0):
+        """
+        Initializes a 1-Wire session.
+        
+        port:
+            A optional port number that will be used to start the session.
+        """
         portNumber = ctypes.c_short(port)
         portType = ctypes.c_short(0)
         TMReadDefaultPort(portNumber, portType)
@@ -50,11 +65,56 @@ class Session(object):
                 raise TMEXException('Unknown setup error, %d' % (result))
 
     def valid(self):
+        """
+        Check if the 1-Wire session is valid.
+        """
         if self._handle == 0:
             return False
         return TMValidSession(self._handle) == 1
+    
+    def _deviceFilter(self, devices, familyFilter):
+        """
+        Filter devices by family.
+        
+        devices:
+            A list of device identifiers.
+        
+        familyFilter:
+            A list of integers or strings where integers are the device family code and strings is the device family
+            name.
+        
+        returns a list of device identifiers.
+        """
+        result = []
+        filterNumbers = []
+        for family in familyFilter:
+            if isinstance(family, (int)):
+                filterNumbers.append(family)
+            elif isinstance(family, (str)):
+                found = False
+                for num, info in iteritems(DEVICEINFO):
+                    if family == info[0]:
+                        filterNumbers.append(num)
+                        found = True
+                        break
+                if not found:
+                    raise TMEXException('Unknown device {}'.format(family))
+        if not filterNumbers:
+            return devices
+        for deviceId in devices:
+            code = int(deviceId[:2], 16)
+            if code in filterNumbers:
+                result.append(deviceId)
+        return result
 
     def enumrate(self, familyFilter=None):
+        """
+        Enumerates the devices on the 1-Wire bus.
+        
+        familyFilter:
+            A optional list of family codes for devices to enumerate, omitting any device of a family not found in the
+            list.
+        """
         if self._handle == 0:
             raise TMEXException('Bus not initialized')
         if not self.valid():
@@ -67,25 +127,37 @@ class Session(object):
             if result == 1:
                 deviceId = ''.join(['%02X' % x for x in rom])
                 romBytes = [x for x in rom]
-                doRead = True
-                if familyFilter:
-                    doRead = romBytes[0] in familyFilter
-                if doRead:
-                    rb = (ctypes.c_ubyte * 8)(*romBytes)
-                    result = TMCRC(8, rb, 0, 0)
-                    if result == 0:
-                        kind = int(rom[0])
-                        info = None
-                        if kind in DEVICEINFO:
-                            info = DEVICEINFO[kind]
-                            devices[deviceId] = {'kind': kind, 'name': info[0], 'description': info[1]}
-                        else:
-                            devices[deviceId] = {'kind': kind}
+                rb = (ctypes.c_ubyte * 8)(*romBytes)
+                result = TMCRC(8, rb, 0, 0)
+                if result == 0:
+                    kind = int(rom[0])
+                    info = None
+                    if kind in DEVICEINFO:
+                        info = DEVICEINFO[kind]
+                        devices[deviceId] = {'kind': kind, 'name': info[0], 'description': info[1]}
+                    else:
+                        devices[deviceId] = {'kind': kind}
             result = TMNext(self._handle, self._context)
         self._devices = devices
-        return devices
+        filteredDevices = {}
+        if familyFilter:
+            ids = self._deviceFilter(devices.keys(), familyFilter)
+            for deviceId in ids:
+                filteredDevices[deviceId] = devices[deviceId]
+        else:
+            filteredDevices = devices
+        return filteredDevices
 
     def readDevice(self, deviceId, enableWireLeveling=False):
+        """
+        Reads the value from a device on the 1-Wire bus.
+        
+        deviceId:
+            The device id of the device to read. Must have been enumerated.
+        
+        enableWireLeveling:
+            Enables the reader to use wire leveling to read from certain devices.
+        """
         if deviceId not in self._devices:
             raise ValueError()
         deviceName = self._devices[deviceId]['name']
@@ -99,13 +171,24 @@ class Session(object):
         else:
             return {}
 
-    def readTemperatureFromAllSensors(self, deviceId='DS18B2', roms=[], timeStamp=True):
-        if deviceId not in ('DS18B2',):
-            raise TMEXException("Sorry, device {} not supported".format(deviceId))
-
-        if len(roms) < 1:
+    def readDevices(self, devices, familyFilter=None, timeStamp=True):
+        """
+        Reads the value from a list of devices from the 1-Wire bus.
+        
+        devices:
+            A list of device id of the devices to read. Must have been enumerated.
+        
+        familyFilter:
+            A optional list of integers or strings where integers are the device family code and strings is the device
+            family name.
+        
+        timeStamp:
+            A optional boolean to enable value timestamps and request timing.
+        """
+        if familyFilter:
+            devices = self._deviceFilter(devices, familyFilter)
+        if len(devices) == 0:
             return {}
-
         if timeStamp:
             startTime = datetime.now()
 
@@ -122,26 +205,29 @@ class Session(object):
             data = TMTouchByte(self._handle, 0xFF)
 
         TMOneWireLevel(self._handle, 0, 0, 0)
-        temperatures = {}
+        result = {}
 
-        for rom in roms:
-            if not rom[:2] == '28':
-                continue
-
-            t = self.readDevice(rom)
-            t = t['temperature'] if 'temperature' in t else None
-            temperatures[rom] = { 'temperature' : t }
-
+        for deviceId in devices:
+            t = self.readDevice(deviceId, enableWireLeveling=False)
+            result[deviceId] = {}
+            for key, value in iteritems(t):
+                result[deviceId][key] = value
             if timeStamp:
-                temperatures[rom]['timestamp'] = datetime.now()
+                result[deviceId]['timestamp'] = datetime.now()
 
         if timeStamp:
             stopTime = datetime.now()
-            temperatures['time'] = (startTime, stopTime)
-            temperatures['delta'] = stopTime - startTime
-        return temperatures
+            result['time'] = (startTime, stopTime)
+            result['delta'] = stopTime - startTime
+        return result
 
     def _addressDevice(self, deviceId):
+        """
+        Addresses a device on the 1-Wire bus directly.
+        
+        deviceId:
+            The device id of the device to read. Must have been enumerated.
+        """
         if deviceId not in self._devices:
             raise ValueError()
         TMTouchReset(self._handle)
@@ -156,6 +242,15 @@ class Session(object):
         return 1
 
     def _read_DS18B2(self, deviceId, enableWireLeveling=False):
+        """
+        Reads the value from a DS18B2 device on the 1-Wire bus.
+        
+        deviceId:
+            The device id of the device to read. Must have been enumerated.
+        
+        enableWireLeveling:
+            Enables the reader to use wire leveling to read from certain devices.
+        """
         result = self._addressDevice(deviceId)
         temp = None
         if result == 1:
@@ -176,6 +271,15 @@ class Session(object):
         return {'temperature': temp}
 
     def _read_DS2438(self, deviceId, enableWireLeveling=False):
+        """
+        Reads the value from a DS2438 device connected to a HIH-4021 family device on the 1-Wire bus.
+        
+        deviceId:
+            The device id of the device to read. Must have been enumerated.
+        
+        enableWireLeveling:
+            Enables the reader to use wire leveling to read from certain devices. Not used for DS2438.
+        """
         result = self._addressDevice(deviceId)
         temp = None
         if result == 1:

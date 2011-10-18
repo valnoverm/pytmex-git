@@ -14,7 +14,19 @@ if arch_bits in architectures:
 ISPYTHON3 = sys.version_info[0] == 3
 
 def iteritems(d):
+    """
+    Convenience function to handle items iterator for Python 2 and Python 3.
+    """
     if ISPYTHON3:
         return d.items()
     else:
         return d.iteritems()
+
+def itervalues(d):
+    """
+    Convenience function to handle value iterator for Python 2 and Python 3.
+    """
+    if ISPYTHON3:
+        return d.values()
+    else:
+        return d.itervalues()
